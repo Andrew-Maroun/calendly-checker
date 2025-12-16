@@ -5,7 +5,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 import time
 
 app = Flask(__name__)
@@ -23,79 +22,54 @@ def create_driver():
     driver = webdriver.Chrome(options=chrome_options)
     return driver
 
+def get_current_month(driver):
+    """Get the currently displayed month"""
+    title = driver.find_element(By.CSS_SELECTOR, '[data-testid="title"]')
+    return title.text
+
 def get_available_dates_with_slots(driver):
-    """Get all available dates and their slot counts for current view"""
+    """Click each available date and count time slots"""
     results = []
     
-    # First, collect all available dates WITHOUT clicking
-    try:
-        bookable_buttons = driver.find_elements(
-            By.CSS_SELECTOR, 
-            'button.booking-kit_button-bookable_80ba95eb'
-        )
-        
-        available_dates = []
-        for btn in bookable_buttons:
-            try:
-                aria_label = btn.get_attribute('aria-label')
-                if aria_label and 'Times available' in aria_label:
-                    date_part = aria_label.split(' - ')[0]
-                    available_dates.append(date_part)
-            except:
-                continue
-        
-        # Now click each date to count slots
-        for date_text in available_dates:
-            try:
-                # Find the button again (fresh reference)
-                date_buttons = driver.find_elements(
-                    By.CSS_SELECTOR, 
-                    'button.booking-kit_button-bookable_80ba95eb'
+    # Find all bookable date buttons
+    bookable_buttons = driver.find_elements(
+        By.CSS_SELECTOR, 
+        'button.booking-kit_button-bookable_80ba95eb'
+    )
+    
+    for btn in bookable_buttons:
+        aria_label = btn.get_attribute('aria-label')
+        if aria_label and 'Times available' in aria_label:
+            date_part = aria_label.split(' - ')[0]
+            
+            # Click the date to reveal time slots
+            btn.click()
+            time.sleep(2)  # Wait for slots to load
+            
+            # Count the time slot buttons
+            slot_buttons = driver.find_elements(
+                By.CSS_SELECTOR, 
+                'button[data-container="time-button"], '
+                'button[data-testid="time"], '
+                '[data-component="spot-list"] button, '
+                '[data-container="spots"] button'
+            )
+            
+            # If above doesn't work, try finding buttons with time patterns
+            if not slot_buttons:
+                slot_buttons = driver.find_elements(
+                    By.XPATH,
+                    '//button[contains(@aria-label, "AM") or contains(@aria-label, "PM") or contains(text(), ":")]'
                 )
-                
-                # Find the button that matches this date
-                for btn in date_buttons:
-                    aria_label = btn.get_attribute('aria-label')
-                    if aria_label and date_text in aria_label and 'Times available' in aria_label:
-                        # Click to reveal time slots
-                        btn.click()
-                        time.sleep(2)
-                        
-                        # Count the time slot buttons
-                        slot_buttons = driver.find_elements(
-                            By.CSS_SELECTOR, 
-                            'button[data-container="time-button"], '
-                            'button[data-testid="time"], '
-                            '[data-component="spot-list"] button, '
-                            '[data-container="spots"] button'
-                        )
-                        
-                        if not slot_buttons:
-                            slot_buttons = driver.find_elements(
-                                By.XPATH,
-                                '//button[contains(@aria-label, "AM") or contains(@aria-label, "PM") or contains(text(), ":")]'
-                            )
-                        
-                        slot_count = len(slot_buttons)
-                        results.append({"date": date_text, "slots": slot_count})
-                        
-                        # Go back to calendar view
-                        driver.back()
-                        time.sleep(2)
-                        break
-                        
-            except Exception as e:
-                print(f"Error processing date {date_text}: {str(e)}")
-                # Try to go back if we're stuck
-                try:
-                    driver.back()
-                    time.sleep(1)
-                except:
-                    pass
-                continue
-                
-    except Exception as e:
-        print(f"Error in get_available_dates_with_slots: {str(e)}")
+            
+            slot_count = len(slot_buttons)
+            
+            results.append({
+                "date": date_part,
+                "slots": slot_count
+            })
+            
+            print(f"  {date_part}: {slot_count} slots")
     
     return results
 
@@ -103,58 +77,69 @@ def check_availability(url: str):
     driver = None
     try:
         driver = create_driver()
+        
+        print("Opening URL...")
         driver.get(url)
         
+        # Wait for calendar to load
+        print("Waiting for calendar to load...")
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="calendar"]'))
         )
         time.sleep(3)
         
-        all_results = []
-        
         # Current month
-        print("Checking current month...")
+        current_month = get_current_month(driver)
+        print(f"\n=== {current_month} ===")
         current_month_results = get_available_dates_with_slots(driver)
-        all_results.extend(current_month_results)
-        print(f"Found {len(current_month_results)} dates in current month")
         
-        # Try next month
+        # Next month
+        next_month_results = []
+        next_month = None
+        
         try:
-            # Make sure we're back at calendar view
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="calendar"]'))
-            )
-            
             next_button = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[aria-label="Go to next month"]'))
             )
             next_button.click()
             time.sleep(3)
             
-            print("Checking next month...")
+            next_month = get_current_month(driver)
+            print(f"\n=== {next_month} ===")
             next_month_results = get_available_dates_with_slots(driver)
-            all_results.extend(next_month_results)
-            print(f"Found {len(next_month_results)} dates in next month")
-        except TimeoutException:
-            print("No next month button available")
-            pass
+            
         except Exception as e:
-            print(f"Error navigating to next month: {str(e)}")
-            pass
+            print(f"\nCould not navigate to next month: {e}")
         
-        total_slots = sum(r['slots'] for r in all_results)
-        available_days = len(all_results)
-        earliest_date = all_results[0]['date'] if all_results else None
+        # Summary
+        print("\n" + "="*50)
+        print("SUMMARY")
+        print("="*50)
+        
+        total_slots = sum(r['slots'] for r in current_month_results) + sum(r['slots'] for r in next_month_results)
+        total_days = len(current_month_results) + len(next_month_results)
+        
+        print(f"Days with availability: {total_days}")
+        print(f"Total time slots: {total_slots}")
+        
+        earliest_date = None
+        if current_month_results:
+            earliest_date = current_month_results[0]['date']
+        elif next_month_results:
+            earliest_date = next_month_results[0]['date']
+        
+        all_results = current_month_results + next_month_results
         
         return {
             "success": True,
-            "available_days": available_days,
+            "available_days": total_days,
             "total_slots": total_slots,
             "earliest_date": earliest_date,
             "details": all_results
         }
         
     except Exception as e:
+        print(f"Error: {str(e)}")
         return {
             "success": False,
             "available_days": 0,
@@ -167,6 +152,7 @@ def check_availability(url: str):
         if driver:
             try:
                 driver.quit()
+                print("\nDriver closed")
             except:
                 pass
 
