@@ -16,6 +16,10 @@ def create_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--remote-debugging-port=9222")  # Add this
+    
+    # For Docker environment
+    chrome_options.binary_location = "/usr/bin/google-chrome"  # Add this
     
     driver = webdriver.Chrome(options=chrome_options)
     return driver
