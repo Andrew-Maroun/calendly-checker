@@ -42,29 +42,32 @@ def get_available_dates_with_slots(driver):
     )
     
     for btn in bookable_buttons:
-        aria_label = btn.get_attribute('aria-label')
-        if aria_label and 'Times available' in aria_label:
-            date_part = aria_label.split(' - ')[0]
-            
-            btn.click()
-            time.sleep(2)
-            
-            slot_buttons = driver.find_elements(
-                By.CSS_SELECTOR, 
-                'button[data-container="time-button"], '
-                'button[data-testid="time"], '
-                '[data-component="spot-list"] button, '
-                '[data-container="spots"] button'
-            )
-            
-            if not slot_buttons:
+        try:  # Catch stale element errors
+            aria_label = btn.get_attribute('aria-label')
+            if aria_label and 'Times available' in aria_label:
+                date_part = aria_label.split(' - ')[0]
+                
+                btn.click()
+                time.sleep(2)
+                
                 slot_buttons = driver.find_elements(
-                    By.XPATH,
-                    '//button[contains(@aria-label, "AM") or contains(@aria-label, "PM") or contains(text(), ":")]'
+                    By.CSS_SELECTOR, 
+                    'button[data-container="time-button"], '
+                    'button[data-testid="time"], '
+                    '[data-component="spot-list"] button, '
+                    '[data-container="spots"] button'
                 )
-            
-            slot_count = len(slot_buttons)
-            results.append({"date": date_part, "slots": slot_count})
+                
+                if not slot_buttons:
+                    slot_buttons = driver.find_elements(
+                        By.XPATH,
+                        '//button[contains(@aria-label, "AM") or contains(@aria-label, "PM") or contains(text(), ":")]'
+                    )
+                
+                slot_count = len(slot_buttons)
+                results.append({"date": date_part, "slots": slot_count})
+        except:  # Skip stale elements and continue
+            continue
     
     return results
 
