@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+import shutil
 
 app = Flask(__name__)
 
@@ -16,12 +17,20 @@ def create_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--remote-debugging-port=9222")
     
-    # For Render's Selenium Docker image
-    chrome_options.binary_location = "/usr/bin/google-chrome"
+    # Find chromium and chromedriver dynamically (like Replit)
+    chromium_path = shutil.which("chromium")
+    chromedriver_path = shutil.which("chromedriver")
     
-    driver = webdriver.Chrome(options=chrome_options)
+    if not chromium_path:
+        raise RuntimeError("Chromium browser not found. Please install chromium.")
+    if not chromedriver_path:
+        raise RuntimeError("ChromeDriver not found. Please install chromedriver.")
+    
+    chrome_options.binary_location = chromium_path
+    service = Service(executable_path=chromedriver_path)
+    
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 def get_available_dates_with_slots(driver):
