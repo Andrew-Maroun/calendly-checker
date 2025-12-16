@@ -1,27 +1,23 @@
-FROM selenium/standalone-chrome:latest
+FROM python:3.11-slim
 
-USER root
-
-# Install Python
+# Install Chromium and ChromeDriver
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
+    chromium \
+    chromium-driver \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Copy requirements and install
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app
 COPY app.py .
 
-# Change ownership to seluser (existing user in selenium image)
-RUN chown -R seluser:seluser /app
-
-# Switch to non-root user
-USER seluser
+# Create non-root user (chromium needs this)
+RUN useradd -m -u 1001 appuser && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 10000
 
